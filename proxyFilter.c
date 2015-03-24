@@ -54,6 +54,9 @@ int main(int argc, char **argv) {
 
     while (1) {
         memset(buf, 0, sizeof(buf));
+	memset(portNum,0,sizeof(portNum));
+	memset(host, 0, sizeof(host));
+	memset(requestType,0,sizeof(requestType));
         if ((new_sd = accept(sd, (struct sockaddr *)&client, &client_len)) == -1) {
             fprintf(stderr, "Can't accept client.\n");
             exit(1);
@@ -63,11 +66,11 @@ int main(int argc, char **argv) {
         bytes_to_read = BUFLEN;
         int i = 0;
         while((n = read(new_sd, bp, bytes_to_read)) > 0) {
-        	printf("%s", "hi");
-        	printf("%s", bp);
-            bp += n;
-            bytes_to_read -= n;
-       }
+        	if(*(bp += (n-1)) == '\n')
+			break;
+            	bp += n;
+            	bytes_to_read -= n;
+       	}
         strptr = strtok(buf, " ");
         strcpy(requestType, strptr);
         printf("request type: %s\n", requestType);
@@ -75,7 +78,7 @@ int main(int argc, char **argv) {
         strptr = strtok(NULL, ":");
         strptr2 = strtok(NULL, ":");
         if(strptr2 != NULL) {
-        	strcpy(host, strptr2);
+        	strcpy(host, strptr2 + 2);
         	strptr = strtok(NULL, " ");
         	strcpy (portNum, strptr);
         } else {
@@ -85,7 +88,17 @@ int main(int argc, char **argv) {
         }
         printf("host: %s\n", host);
         printf("port: %s\n", portNum);
-      }
+	
+	if(strcmp(requestType,"GET") != 0) {
+	  //snprintf(outbuf, BUFLEN, "%d\n", (int) strlen(buf));
+	  memset(outbuf,0,sizeof(outbuf));
+	  strcpy(outbuf,"405 Method Not Allowed\n");
+	  write(new_sd, outbuf, strlen(outbuf));
+	  printf("Sent: %s\n", outbuf);
+	}
+	
+	close(new_sd);
+    }
 
     //close
     close(sd);
