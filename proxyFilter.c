@@ -5,20 +5,22 @@
 #include <sys/socket.h>
 #include <netdb.h>
 #include <netinet/in.h>
+#include <arpa/inet.h>
 #define SERVER_TCP_PORT 8080
 #define BUFLEN 256
 
 int main(int argc, char **argv) {
 
     int n, bytes_to_read;
-    int sd, new_sd, client_len, port;
-    struct sockaddr_in server, client;
+    int sd, new_sd, client_len, port, hostPort;
+    struct sockaddr_in server, client, host;
+    struct hostent *hostent;
     char *bp, buf[BUFLEN], outbuf[BUFLEN];
     char* strptr;
     char* strptr2;
     char* strptr3;
     char requestType[4];
-    char host[256];
+    char hostAddr[256];
     char portNum[6];
     
     switch (argc) {
@@ -56,7 +58,7 @@ int main(int argc, char **argv) {
     while (1) {
         memset(buf, 0, sizeof(buf));
 	memset(portNum,0,sizeof(portNum));
-	memset(host, 0, sizeof(host));
+	memset(hostAddr, 0, sizeof(hostAddr));
 	memset(requestType,0,sizeof(requestType));
         if ((new_sd = accept(sd, (struct sockaddr *)&client, &client_len)) == -1) {
             fprintf(stderr, "Can't accept client.\n");
@@ -89,17 +91,28 @@ int main(int argc, char **argv) {
 	strptr2 = strtok(NULL, ":");
 	strptr3 = strtok(NULL, " ");
         if(strptr3 != NULL) {
-        	strcpy(host, strptr2 + 2);
+        	strcpy(hostAddr, strptr2 + 2);
         	strcpy (portNum, strptr3);
         } else {
 		strptr = strtok(strptr2, " ");
-        	strcpy(host, strptr + 2);
+        	strcpy(hostAddr, strptr + 2);
         	strncpy(portNum,"80",2);
         }
-        printf("host: %s\n", host);
+        printf("host: %s\n", hostAddr);
         printf("port: %s\n", portNum);
-	
-	
+
+    hostent = gethostbyname(hostAddr);
+    bzero((char *) &host, sizeof(host));
+    host.sin_family = AF_INET;
+    hostPort = atoi(portNum);
+    host.sin_port = hostPort;
+    bcopy((char *) hostent->h_addr, (char *) &host.sin_addr.s_addr, hostent->h_length);
+
+    if (connect(sd, (struct sockaddr *)& host, sizeof(host)) < 0) {
+        printf("Connect failed (on port %d,  %s).\n", host.sin_port, inet_ntoa(host.sin_addr));
+        exit(1);
+    }
+
 	close(new_sd);
     }
 
