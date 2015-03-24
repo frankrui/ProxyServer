@@ -16,6 +16,7 @@ int main(int argc, char **argv) {
     char *bp, buf[BUFLEN], outbuf[BUFLEN];
     char* strptr;
     char* strptr2;
+    char* strptr3;
     char requestType[4];
     char host[256];
     char portNum[6];
@@ -64,7 +65,6 @@ int main(int argc, char **argv) {
         
         bp = buf;
         bytes_to_read = BUFLEN;
-        int i = 0;
         while((n = read(new_sd, bp, bytes_to_read)) > 0) {
         	if(*(bp += (n-1)) == '\n')
 			break;
@@ -75,27 +75,30 @@ int main(int argc, char **argv) {
         strcpy(requestType, strptr);
         printf("request type: %s\n", requestType);
 
-        strptr = strtok(NULL, ":");
-        strptr2 = strtok(NULL, ":");
-        if(strptr2 != NULL) {
+	if(strcmp(requestType,"GET") != 0) {
+	  //snprintf(outbuf, BUFLEN, "%d\n", (int) strlen(buf));
+	  memset(outbuf,0,sizeof(outbuf));
+	  strcpy(outbuf,"405 Method Not Allowed (Only a GET method is allowed)\n");
+	  write(new_sd, outbuf, strlen(outbuf));
+	  printf("Sent: %s\n", outbuf);
+	  close(new_sd);
+	  continue;
+	}
+
+	strptr = strtok(NULL, ":");
+	strptr2 = strtok(NULL, ":");
+	strptr3 = strtok(NULL, " ");
+        if(strptr3 != NULL) {
         	strcpy(host, strptr2 + 2);
-        	strptr = strtok(NULL, " ");
-        	strcpy (portNum, strptr);
+        	strcpy (portNum, strptr3);
         } else {
-        	strptr = strtok (NULL, " ");
-        	strcpy(host, strptr);
+		strptr = strtok(strptr2, " ");
+        	strcpy(host, strptr + 2);
         	strncpy(portNum,"80",2);
         }
         printf("host: %s\n", host);
         printf("port: %s\n", portNum);
 	
-	if(strcmp(requestType,"GET") != 0) {
-	  //snprintf(outbuf, BUFLEN, "%d\n", (int) strlen(buf));
-	  memset(outbuf,0,sizeof(outbuf));
-	  strcpy(outbuf,"405 Method Not Allowed\n");
-	  write(new_sd, outbuf, strlen(outbuf));
-	  printf("Sent: %s\n", outbuf);
-	}
 	
 	close(new_sd);
     }
