@@ -9,6 +9,17 @@
 #define SERVER_TCP_PORT 8080
 #define BUFLEN 256
 
+char* firstLine(char* request, char* temp) {
+  int i = 0;
+  memset(temp, 0, sizeof(temp));
+  while(request[i] != '\r' && request[i+1] != '\n') {
+    temp[i] = request[i];
+    i++;
+  }
+  printf("%s", temp);
+  return temp;
+}
+
 int main(int argc, char **argv) {
 
     int n, bytes_to_read;
@@ -22,6 +33,7 @@ int main(int argc, char **argv) {
     char requestType[4];
     char hostAddr[256];
     char portNum[6];
+    char temp[256];
     
     switch (argc) {
         case 1:
@@ -68,17 +80,23 @@ int main(int argc, char **argv) {
         bp = buf;
         bytes_to_read = BUFLEN;
         while((n = read(new_sd, bp, bytes_to_read)) > 0) {
-        	if(*(bp += (n-1)) == '\n')
-			break;
-            	bp += n;
-            	bytes_to_read -= n;
+	  printf("%s", bp);
+	  printf("%d", n);
+	  if(*(bp += (n-1)) == '\n') {
+	    break;
+	  }
+	  bp += n;
+	  bytes_to_read -= n;
        	}
-        strptr = strtok(buf, " ");
+
+	char* first = firstLine(buf,temp);
+	
+        strptr = strtok(first, " ");
         strcpy(requestType, strptr);
         printf("request type: %s\n", requestType);
 
+	/* Check if Method is a GET method */
 	if(strcmp(requestType,"GET") != 0) {
-	  //snprintf(outbuf, BUFLEN, "%d\n", (int) strlen(buf));
 	  memset(outbuf,0,sizeof(outbuf));
 	  strcpy(outbuf,"405 Method Not Allowed (Only a GET method is allowed)\n");
 	  write(new_sd, outbuf, strlen(outbuf));
@@ -130,3 +148,5 @@ int main(int argc, char **argv) {
     return 0;
 
 }
+
+
