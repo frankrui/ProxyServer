@@ -32,6 +32,7 @@ int main(int argc, char **argv) {
     char* strptr3;
     char requestType[4];
     char hostAddr[256];
+    char absolutePath[256];
     char portNum[6];
     char temp[256];
     
@@ -72,6 +73,8 @@ int main(int argc, char **argv) {
 	memset(portNum,0,sizeof(portNum));
 	memset(hostAddr, 0, sizeof(hostAddr));
 	memset(requestType,0,sizeof(requestType));
+	memset(absolutePath,0,sizeof(absolutePath));
+	memset(temp,0,sizeof(temp));
         if ((new_sd = accept(sd, (struct sockaddr *)&client, &client_len)) == -1) {
             fprintf(stderr, "Can't accept client.\n");
             exit(1);
@@ -109,15 +112,29 @@ int main(int argc, char **argv) {
 	strptr2 = strtok(NULL, ":");
 	strptr3 = strtok(NULL, " ");
         if(strptr3 != NULL) {
-        	strcpy(hostAddr, strptr2 + 2);
-        	strcpy (portNum, strptr3);
+	  char buffer[256];
+	  
+	  strcpy(buffer, strptr2 + 2);
+
+	  strptr = strtok(buffer, "/");
+	  strcpy(hostAddr, strptr);
+	  strptr = strtok(NULL, " ");
+	  strcpy(absolutePath, strptr);
+	  strcpy (portNum, strptr3);
         } else {
-		strptr = strtok(strptr2, " ");
-        	strcpy(hostAddr, strptr + 2);
-        	strncpy(portNum,"80",2);
+	  char buffer[256];
+	  
+	  strptr = strtok(strptr2, " ");
+	  strcpy(buffer, strptr + 2);
+	  strptr = strtok(buffer, "/");
+	  strcpy(hostAddr,strptr);
+	  strptr = strtok(NULL, " ");
+	  strcpy(absolutePath,strptr);
+	  strncpy(portNum,"80",2);
         }
         printf("host: %s\n", hostAddr);
         printf("port: %s\n", portNum);
+	printf("path: %s\n", absolutePath);
 
     	hostent = gethostbyname(hostAddr);
     	bzero((char *) &host, sizeof(host));
