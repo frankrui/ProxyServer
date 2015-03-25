@@ -119,7 +119,10 @@ int main(int argc, char **argv) {
 	  strptr = strtok(buffer, "/");
 	  strcpy(hostAddr, strptr);
 	  strptr = strtok(NULL, " ");
-	  strcpy(absolutePath, strptr);
+	  if(strptr != NULL) {
+	    strcpy(absolutePath, strptr);
+	  } else {
+	    strncpy(absolutePath, "/", 1);
 	  strcpy (portNum, strptr3);
         } else {
 	  char buffer[256];
@@ -129,7 +132,10 @@ int main(int argc, char **argv) {
 	  strptr = strtok(buffer, "/");
 	  strcpy(hostAddr,strptr);
 	  strptr = strtok(NULL, " ");
-	  strcpy(absolutePath,strptr);
+	  if(strptr != NULL) {
+	    strcpy(absolutePath, strptr);
+	  } else {
+	    strncpy(absolutePath, "/", 1);
 	  strncpy(portNum,"80",2);
         }
         printf("host: %s\n", hostAddr);
