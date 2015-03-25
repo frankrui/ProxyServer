@@ -12,8 +12,8 @@
 int main(int argc, char **argv) {
 
     int n, bytes_to_read;
-    int sd, new_sd, client_len, port, hostPort;
-    struct sockaddr_in server, client, host;
+    int sd, new_sd, client_len, port, hostPort, host_sd;
+    struct sockaddr_in server, client,host;
     struct hostent *hostent;
     char *bp, buf[BUFLEN], outbuf[BUFLEN];
     char* strptr;
@@ -101,17 +101,26 @@ int main(int argc, char **argv) {
         printf("host: %s\n", hostAddr);
         printf("port: %s\n", portNum);
 
-    hostent = gethostbyname(hostAddr);
-    bzero((char *) &host, sizeof(host));
-    host.sin_family = AF_INET;
-    hostPort = atoi(portNum);
-    host.sin_port = hostPort;
-    bcopy((char *) hostent->h_addr, (char *) &host.sin_addr.s_addr, hostent->h_length);
+    	hostent = gethostbyname(hostAddr);
+    	bzero((char *) &host, sizeof(host));
+    	host.sin_family = AF_INET;
+    	hostPort = atoi(portNum);
+    	host.sin_port = htons(hostPort);
+    	bcopy((char *) hostent->h_addr, (char *) &host.sin_addr.s_addr, hostent->h_length);
+	//printf("%d",hostent->h_addr);
+	//printf("%d",hostent->h_length);
 
-    if (connect(sd, (struct sockaddr *)& host, sizeof(host)) < 0) {
-        printf("Connect failed (on port %d,  %s).\n", host.sin_port, inet_ntoa(host.sin_addr));
-        exit(1);
-    }
+    	if ((host_sd = socket(AF_INET, SOCK_STREAM, 0)) == -1) {
+	  fprintf(stderr, "Can't create a socket.\n");
+	  exit(1);
+    	}
+
+    	if (connect(host_sd,(struct sockaddr*) &host, sizeof(host)) < 0) {
+	  printf("Connect failed (on port %d,  %s).\n", host.sin_port, inet_ntoa(host.sin_addr));
+	  exit(1);
+    	} else {
+	  printf("Connection succeeded\n");
+    	}
 
 	close(new_sd);
     }
