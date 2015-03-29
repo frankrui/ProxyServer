@@ -6,9 +6,15 @@
 #include <netdb.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
-#include <Thread.h>
+#include "Thread.h"
+#include <time.h>
 #define SERVER_TCP_PORT 8080
 #define BUFLEN 32000 //make it smaller for testing
+
+struct Argument{
+        FILE* fp;
+        int sd;
+    };
 
 int firstLine_len;
 char* firstLine(char* request, char* temp) {
@@ -24,7 +30,7 @@ char* firstLine(char* request, char* temp) {
   return temp;
 }
 
-void request_handler(void* sd) {
+void request_handler(void* args) {
   int n, bytes_to_read;
   int server_sd, new_sd, client_len, port, hostPort, host_sd;
   struct sockaddr_in client,host;
@@ -39,12 +45,13 @@ void request_handler(void* sd) {
   char portNum[6];
   char temp[256];
   char line[100];
-  FILE* fp;
+  struct Argument * ptr = (struct Argument*) args;
+  FILE* fp = ptr->fp;
 
-  server_sd = *sd;
+  server_sd = (int) ptr->sd;
 
   while (1) {
-        memset(buf, 0, sizeof(buf));
+    memset(buf, 0, sizeof(buf));
 	memset(portNum,0, sizeof(portNum));
 	memset(hostAddr, 0, sizeof(hostAddr));
 	memset(requestType,0, sizeof(requestType));
@@ -122,9 +129,10 @@ void request_handler(void* sd) {
 
         printf("host: %s\n", hostAddr);
         printf("port: %s\n", portNum);
-	printf("path: %s\n", absolutePath);
+	    printf("path: %s\n", absolutePath);
 
         //check blacklist before making connection
+        if (fp != NULL) {
         do {
             if (fgets(line, 100, fp) != NULL) {
                 strptr = strtok(line, ".");
@@ -141,6 +149,7 @@ void request_handler(void* sd) {
             }
         } while (1);
         fclose(fp);
+    }
 
     	hostent = gethostbyname(hostAddr);
     	bzero((char *) &host, sizeof(host));
@@ -187,15 +196,16 @@ void request_handler(void* sd) {
             write(new_sd, buf, strlen(buf));
             printf("server response: %s\n", buf);
         }
+        sleep(5000);
         close(host_sd);
-	close(new_sd);
+	    close(new_sd);
     }
 }
 
 int main(int argc, char **argv) {
 
     int n, bytes_to_read;
-    int sd, new_sd, client_len, port, hostPort, host_sd;
+    int new_sd, client_len, port, hostPort, host_sd;
     struct sockaddr_in server, client,host;
     struct hostent *hostent;
     char *bp, buf[BUFLEN], outbuf[BUFLEN];
@@ -208,8 +218,9 @@ int main(int argc, char **argv) {
     char portNum[6];
     char temp[256];
     char line[100];
-    FILE* fp;
+
     
+    struct Argument args;    
     switch (argc) {
         case 1:
             port = SERVER_TCP_PORT;
@@ -219,7 +230,7 @@ int main(int argc, char **argv) {
             break;
         case 3: 
             port = atoi(argv[1]);
-            fp = fopen(argv[2], "r");
+            args.fp = fopen(argv[2], "r");
             break;
         default:
             fprintf(stderr, "Usage: %s [port]\n",
@@ -228,7 +239,7 @@ int main(int argc, char **argv) {
     }
     
     /* Create a stream socket. */
-    if ((sd = socket(AF_INET, SOCK_STREAM, 0)) == -1) {
+    if ((args.sd = socket(AF_INET, SOCK_STREAM, 0)) == -1) {
         fprintf(stderr, "Can't create a socket.\n");
         exit(1);
     }
@@ -238,13 +249,13 @@ int main(int argc, char **argv) {
     server.sin_family = AF_INET;
     server.sin_port = htons(port);
     server.sin_addr.s_addr = htonl(INADDR_ANY);
-    if (bind(sd, (struct sockaddr *)&server, sizeof(server)) ==-1) {
+    if (bind(args.sd, (struct sockaddr *)&server, sizeof(server)) ==-1) {
         fprintf(stderr, "Can't bind name to socket.\n");
         exit(1);
     }
     
     /* Listen on socket. */
-    listen(sd, 5);
+    listen(args.sd, 5);
 
     /* Create 4 worker threads. */
     struct Thread *threads[4];
@@ -252,7 +263,7 @@ int main(int argc, char **argv) {
     int i = 0;
 
     while(i < 4) {
-      threads[i] = (struct Thread*) createThread((void*) &request_handler, (void*) &sd);
+      threads[i] = (struct Thread*) createThread((void*) &request_handler, (void*) &args);
       error = runThread(threads[i],NULL);
       if (error != -10) {
 	i++;
@@ -263,7 +274,7 @@ int main(int argc, char **argv) {
     int join2 = joinThread(threads[2],NULL);
     int join3 = joinThread(threads[3],NULL);
     
-    close(sd);
+    close(args.sd);
     return 0;
 
 }
