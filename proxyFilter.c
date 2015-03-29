@@ -14,8 +14,8 @@ char* firstLine(char* request, char* temp) {
   int i = 0;
   memset(temp, 0, sizeof(temp));
   while(request[i] != '\r' && request[i+1] != '\n') { 
-    temp[i] = request[i];
-    i++;
+        temp[i] = request[i];
+        i++;
   }
   firstLine_len = i;
   printf("length of first line is: %i\n", firstLine_len);
@@ -38,6 +38,8 @@ int main(int argc, char **argv) {
     char absolutePath[256];
     char portNum[6];
     char temp[256];
+    char line[100];
+    FILE* fp;
     
     switch (argc) {
         case 1:
@@ -45,6 +47,10 @@ int main(int argc, char **argv) {
             break;
         case 2:
             port = atoi(argv[1]);
+            break;
+        case 3: 
+            port = atoi(argv[1]);
+            fp = fopen(argv[2], "r");
             break;
         default:
             fprintf(stderr, "Usage: %s [port]\n",
@@ -101,56 +107,76 @@ int main(int argc, char **argv) {
         strcpy(requestType, strptr);
         printf("request type: %s\n", requestType);
 
-	/* Check if Method is a GET method */
-	if(strcmp(requestType,"GET") != 0) {
-	  memset(outbuf,0,sizeof(outbuf));
-	  strcpy(outbuf,"405 Method Not Allowed (Only a GET method is allowed)\n");
-	  write(new_sd, outbuf, strlen(outbuf));
-	  printf("Sent: %s\n", outbuf);
-	  close(new_sd);
-	  continue;
-	}
+	   /* Check if Method is a GET method */
+	   if(strcmp(requestType,"GET") != 0) {
+	       memset(outbuf,0,sizeof(outbuf));
+	       strcpy(outbuf,"405 Method Not Allowed (Only a GET method is allowed)\n");
+	       write(new_sd, outbuf, strlen(outbuf));
+	       printf("Sent: %s\n", outbuf);
+	       close(new_sd);
+	       continue;
+	    }
 
-	strptr = strtok(NULL, ":");
-	strptr2 = strtok(NULL, ":");
-	strptr3 = strtok(NULL, " ");
-    if(strptr3 != NULL) {
-	  char buffer[256];
+	   strptr = strtok(NULL, ":");
+	   strptr2 = strtok(NULL, ":");
+	   strptr3 = strtok(NULL, " ");
+       if(strptr3 != NULL) {
+	       char buffer[256];
 	  
-	  strcpy(buffer, strptr2 + 2);
+	       strcpy(buffer, strptr2 + 2);
 
-	  strptr = strtok(buffer, "/");
-	  strcpy(hostAddr, strptr);
-	  strptr = strtok(NULL, " ");
-	  if(strptr != NULL) {
-        strcpy(absolutePath, strptr);
-        memmove(absolutePath+1, absolutePath, strlen(absolutePath));
-        *absolutePath = '/';
-	   } else {
-	    strncpy(absolutePath, "/", 1);
-    }
-	  strcpy (portNum, strptr3);
-    } else {
-	  char buffer[256];
+	       strptr = strtok(buffer, "/");
+	       strcpy(hostAddr, strptr);
+	       strptr = strtok(NULL, " ");
+	       if(strptr != NULL) {
+                strcpy(absolutePath, strptr);
+                memmove(absolutePath+1, absolutePath, strlen(absolutePath));
+                *absolutePath = '/';
+	       } else {
+	           strncpy(absolutePath, "/", 1);
+           }
+	       strcpy (portNum, strptr3);
+        } else {
+	        char buffer[256];
 	  
-	  strptr = strtok(strptr2, " ");
-	  strcpy(buffer, strptr + 2);
-	  strptr = strtok(buffer, "/");
-	  strcpy(hostAddr,strptr);
-	  strptr = strtok(NULL, " ");
-	  if(strptr != NULL) {
-        strcpy(absolutePath, strptr);
-        memmove(absolutePath+1, absolutePath, strlen(absolutePath));
-        *absolutePath = '/';
-	  } else {
-	    strncpy(absolutePath, "/", 1);
+	        strptr = strtok(strptr2, " ");
+	        strcpy(buffer, strptr + 2);
+	        strptr = strtok(buffer, "/");
+	        strcpy(hostAddr,strptr);
+	        strptr = strtok(NULL, " ");
+	        if(strptr != NULL) {
+                strcpy(absolutePath, strptr);
+                memmove(absolutePath+1, absolutePath, strlen(absolutePath));
+                *absolutePath = '/';
+	        } else {
+	        strncpy(absolutePath, "/", 1);
+            }
+	        strncpy(portNum,"80",2);
         }
-	    strncpy(portNum,"80",2);
-    }
 
         printf("host: %s\n", hostAddr);
         printf("port: %s\n", portNum);
 	    printf("path: %s\n", absolutePath);
+
+        //check blacklist before making connection\
+        //fgets(line, 100, fp) != NULL
+        do {
+            if (fgets(line, 100, fp) != NULL) {
+                strptr = strtok(line, ".");
+                strptr = strtok(NULL, "."); //get host name of black list address
+                strptr2 = strtok(hostAddr, ".");
+                strptr2 = strtok(NULL, ".");
+                if (*strptr == *strptr2) {
+                    printf("403 this URI is on black list");
+                    exit(1);
+                }
+                printf("black list: %s", line);
+            } else {
+                break;
+            }
+        }
+        while (1);
+        fclose(fp);
 
     	hostent = gethostbyname(hostAddr);
     	bzero((char *) &host, sizeof(host));
@@ -199,6 +225,7 @@ int main(int argc, char **argv) {
             write(new_sd, buf, strlen(buf));
             printf("server response: %s\n", buf);
         }
+        close(host_sd);
 	    close(new_sd);
     }
 
