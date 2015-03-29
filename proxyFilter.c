@@ -7,16 +7,19 @@
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #define SERVER_TCP_PORT 8080
-#define BUFLEN 256
+#define BUFLEN 32000 //make it smaller for testing
 
+int firstLine_len;
 char* firstLine(char* request, char* temp) {
   int i = 0;
   memset(temp, 0, sizeof(temp));
-  while(request[i] != '\r' && request[i+1] != '\n') {
+  while(request[i] != '\r' && request[i+1] != '\n') { 
     temp[i] = request[i];
     i++;
   }
-  printf("%s", temp);
+  firstLine_len = i;
+  printf("length of first line is: %i\n", firstLine_len);
+  printf("first line: %s\n", temp);
   return temp;
 }
 
@@ -70,11 +73,11 @@ int main(int argc, char **argv) {
 
     while (1) {
         memset(buf, 0, sizeof(buf));
-	memset(portNum,0,sizeof(portNum));
-	memset(hostAddr, 0, sizeof(hostAddr));
-	memset(requestType,0,sizeof(requestType));
-	memset(absolutePath,0,sizeof(absolutePath));
-	memset(temp,0,sizeof(temp));
+	    memset(portNum,0, sizeof(portNum));
+	    memset(hostAddr, 0, sizeof(hostAddr));
+	    memset(requestType,0, sizeof(requestType));
+	    memset(absolutePath,0, sizeof(absolutePath));
+	    memset(temp,0,sizeof(temp));
         if ((new_sd = accept(sd, (struct sockaddr *)&client, &client_len)) == -1) {
             fprintf(stderr, "Can't accept client.\n");
             exit(1);
@@ -83,16 +86,16 @@ int main(int argc, char **argv) {
         bp = buf;
         bytes_to_read = BUFLEN;
         while((n = read(new_sd, bp, bytes_to_read)) > 0) {
-	  printf("%s", bp);
-	  printf("%d", n);
-	  if(*(bp += (n-1)) == '\n') {
-	    break;
-	  }
-	  bp += n;
-	  bytes_to_read -= n;
+	       printf("request:%s\n", bp);
+	       printf("length of request:%d\n", n);
+	       if(*(bp += (n-1)) == '\n') {
+	           break;
+	       }
+	       bp += n;
+	       bytes_to_read -= n;
        	}
 
-	char* first = firstLine(buf,temp);
+	    char* first = firstLine(buf,temp);
 	
         strptr = strtok(first, " ");
         strcpy(requestType, strptr);
@@ -111,7 +114,7 @@ int main(int argc, char **argv) {
 	strptr = strtok(NULL, ":");
 	strptr2 = strtok(NULL, ":");
 	strptr3 = strtok(NULL, " ");
-        if(strptr3 != NULL) {
+    if(strptr3 != NULL) {
 	  char buffer[256];
 	  
 	  strcpy(buffer, strptr2 + 2);
@@ -120,11 +123,14 @@ int main(int argc, char **argv) {
 	  strcpy(hostAddr, strptr);
 	  strptr = strtok(NULL, " ");
 	  if(strptr != NULL) {
-	    strcpy(absolutePath, strptr);
-	  } else {
+        strcpy(absolutePath, strptr);
+        memmove(absolutePath+1, absolutePath, strlen(absolutePath));
+        *absolutePath = '/';
+	   } else {
 	    strncpy(absolutePath, "/", 1);
+    }
 	  strcpy (portNum, strptr3);
-        } else {
+    } else {
 	  char buffer[256];
 	  
 	  strptr = strtok(strptr2, " ");
@@ -133,14 +139,18 @@ int main(int argc, char **argv) {
 	  strcpy(hostAddr,strptr);
 	  strptr = strtok(NULL, " ");
 	  if(strptr != NULL) {
-	    strcpy(absolutePath, strptr);
+        strcpy(absolutePath, strptr);
+        memmove(absolutePath+1, absolutePath, strlen(absolutePath));
+        *absolutePath = '/';
 	  } else {
 	    strncpy(absolutePath, "/", 1);
-	  strncpy(portNum,"80",2);
         }
+	    strncpy(portNum,"80",2);
+    }
+
         printf("host: %s\n", hostAddr);
         printf("port: %s\n", portNum);
-	printf("path: %s\n", absolutePath);
+	    printf("path: %s\n", absolutePath);
 
     	hostent = gethostbyname(hostAddr);
     	bzero((char *) &host, sizeof(host));
@@ -148,22 +158,48 @@ int main(int argc, char **argv) {
     	hostPort = atoi(portNum);
     	host.sin_port = htons(hostPort);
     	bcopy((char *) hostent->h_addr, (char *) &host.sin_addr.s_addr, hostent->h_length);
-	//printf("%d",hostent->h_addr);
-	//printf("%d",hostent->h_length);
+	    //printf("%d",hostent->h_addr);
+	    //printf("%d",hostent->h_length);
 
     	if ((host_sd = socket(AF_INET, SOCK_STREAM, 0)) == -1) {
-	  fprintf(stderr, "Can't create a socket.\n");
-	  exit(1);
+	        fprintf(stderr, "Can't create a socket.\n");
+	        exit(1);
     	}
 
-    	if (connect(host_sd,(struct sockaddr*) &host, sizeof(host)) < 0) {
-	  printf("Connect failed (on port %d,  %s).\n", host.sin_port, inet_ntoa(host.sin_addr));
-	  exit(1);
-    	} else {
-	  printf("Connection succeeded\n");
-    	}
+        //make new first line
+        char newFirstLine[1024]; 
+        strcpy(newFirstLine, "GET ");
+        strcat(newFirstLine, absolutePath);
+        strcat(newFirstLine, " HTTP/1.1");
+        printf("new first line: %s\n", newFirstLine);
 
-	close(new_sd);
+        //delete first line from buf
+        while (firstLine_len > 0) {
+            memmove(buf, buf+1, strlen(buf));
+            firstLine_len--;
+        }
+        strcat(newFirstLine, buf);
+        printf("new request: %s\n", newFirstLine);
+
+        //connect to server
+        if (connect(host_sd,(struct sockaddr*) &host, sizeof(host)) < 0) {
+            printf("Connect failed (on port %d,  %s).\n", host.sin_port, inet_ntoa(host.sin_addr));
+            exit(1);
+        } else {
+            printf("Connection succeeded\n");
+        }
+
+        n = write(host_sd, newFirstLine, strlen(newFirstLine));
+
+        if (n < 0) {
+            printf("cannot write to socket\n");
+        } else {
+            printf("write successfully\n");
+            read(host_sd, buf, bytes_to_read);
+            write(new_sd, buf, strlen(buf));
+            printf("server response: %s\n", buf);
+        }
+	    close(new_sd);
     }
 
     //close
