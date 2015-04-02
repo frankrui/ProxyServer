@@ -16,7 +16,7 @@
 struct Argument{
         FILE* fp;
         int sd;
-    };
+};
 
 /* Reads only the headers up to \r\n\r\n of the response */
 int readHeaders(int sd, char* buffer) {
@@ -136,16 +136,17 @@ void getHeaderContent(char* buf, char* returnString, char* headerType) {
   }
 }
 
-int firstLine(char* request, char* temp) {
+int firstLine(char* request, char* returnString) {
+  printf("inside firstLine function\n");
   int firstLine_len;
   int i = 0;
   while(request[i] != '\r' && request[i+1] != '\n') { 
-        temp[i] = request[i];
+        returnString[i] = request[i];
         i++;
   }
   firstLine_len = i;
-  printf("length of first line is: %i\n", firstLine_len);
-  printf("first line: %s\n", temp);
+  printf("length of first line is: %d\n", firstLine_len);
+  printf("first line: %s\n", returnString);
   return firstLine_len;
 }
 
@@ -191,253 +192,286 @@ void request_handler(void* args) {
     if ((new_sd = accept(server_sd, (struct sockaddr *)&client, &client_len)) == -1) {
       fprintf(stderr, "Can't accept client.\n");
       exit(1);
-    }
-    printf("past accept\n");    
+    }   
     bp = buf;
     bytes_to_read = BUFLEN;
-        while((n = read(new_sd, bp, bytes_to_read)) > 0) {
-	       printf("request:%s\n", bp);
-	       printf("length of request:%d\n", n);
+    while((n = read(new_sd, bp, bytes_to_read)) > 0) {
+      printf("request:%s\n", bp);
+      printf("length of request:%d\n", n);
 	       /*if(*(bp + (n-1)) == '\n' && 
 	       	  *(bp + (n-2)) == '\r' && 
 		  *(bp + (n-3)) == '\n' && 
 		  *(bp + (n-4)) == '\r') {
 		 break;
 		 }*/
-	       if(strcmp(bp + (n-4), "\r\n\r\n") == 0){
-		 break;
-	       }
-	       bp += n;
-	       bytes_to_read -= n;
-       	}
-
-	firstLine_len = firstLine(buf,temp);
-	strncpy(tempHandler,temp,sizeof(temp));
-	
-        strptr = strtok(tempHandler, " ");
-        strcpy(requestType, strptr);
-        printf("request type: %s\n", requestType);
-
-	   /* Check if Method is a GET method */
-	   if(strcmp(requestType,"GET") != 0) {
-	       memset(outbuf,0,sizeof(outbuf));
-	       strcpy(outbuf,"405 Method Not Allowed (Only a GET method is allowed)\n");
-	       write(new_sd, outbuf, strlen(outbuf));
-	       printf("Sent: %s\n", outbuf);
-	       close(new_sd);
-	       continue;
-	    }
-
-	   strptr = strtok(NULL, ":");
-	   strptr2 = strtok(NULL, ":");
-	   strptr3 = strtok(NULL, " ");
-	   if(strptr3 != NULL) {
-	       char buffer[BUFLEN];
-	       memset(buffer,0,sizeof(buffer));
-	       strcpy(buffer, strptr2 + 2);
-
-	       strptr = strtok(buffer, "/");
-	       strcpy(hostAddr, strptr);
-	       strptr = strtok(NULL, " ");
-	       if(strptr != NULL) {
-                strcpy(absolutePath, strptr);
-                memmove(absolutePath+1, absolutePath, strlen(absolutePath));
-                *absolutePath = '/';
-	       } else {
-	           strncpy(absolutePath, "/", 1);
-           }
-	       strcpy (portNum, strptr3);
-        } else {
-	        char buffer[BUFLEN];
-		memset(buffer,0,sizeof(buffer));
-
-	        strptr = strtok(strptr2, " ");
-	        strcpy(buffer, strptr + 2);
-	        strptr = strtok(buffer, "/");
-	        strcpy(hostAddr,strptr);
-	        strptr = strtok(NULL, " ");
-	        if(strptr != NULL) {
-                strcpy(absolutePath, strptr);
-                memmove(absolutePath+1, absolutePath, strlen(absolutePath));
-                *absolutePath = '/';
-	        } else {
-	        strncpy(absolutePath, "/", 1);
-            }
-	        strncpy(portNum,"80",2);
-        }
-
-        printf("host: %s\n", hostAddr);
-        printf("port: %s\n", portNum);
-	printf("path: %s\n", absolutePath);
-
-        //check blacklist before making connection
-        if (fp != NULL) {
-	  do {
-            if (fgets(line, 100, fp) != NULL) {
-                strptr = strtok(line, ".");
-                strptr = strtok(NULL, "."); //get host name of black list address
-                strptr2 = strtok(hostAddr, ".");
-                strptr2 = strtok(NULL, ".");
-                if (*strptr == *strptr2) {
-                    printf("403 this URI is on black list");
-                    exit(1);
-                }
-                printf("black list: %s", line);
-            } else {
-                break;
-            }
-	  } while (1);
-	  fclose(fp);
-	}
-
-    	hostent = gethostbyname(hostAddr);
-    	bzero((char *) &host, sizeof(host));
-    	host.sin_family = AF_INET;
-    	hostPort = atoi(portNum);
-    	host.sin_port = htons(hostPort);
-    	bcopy((char *) hostent->h_addr, (char *) &host.sin_addr.s_addr, hostent->h_length);
-
-    	if ((host_sd = socket(AF_INET, SOCK_STREAM, 0)) == -1) {
-	        fprintf(stderr, "Can't create a socket.\n");
-	        exit(1);
-    	}
-
-        //make new first line
-        char newFirstLine[BUFLEN];
-	memset(newFirstLine,0,sizeof(newFirstLine));
-        strcpy(newFirstLine, "GET ");
-        strcat(newFirstLine, absolutePath);
-        strcat(newFirstLine, " HTTP/1.1");
-        printf("new first line: %s\n", newFirstLine);
-
-        //delete first line from buf
-        while (firstLine_len > 0) {
-            memmove(buf, buf+1, strlen(buf));
-            firstLine_len--;
-        }
-        strcat(newFirstLine, buf);
-        printf("new request: %s\n", newFirstLine);
-
-        //connect to server
-        if (connect(host_sd,(struct sockaddr*) &host, sizeof(host)) < 0) {
-            printf("Connect failed (on port %d,  %s).\n", host.sin_port, inet_ntoa(host.sin_addr));
-            exit(1);
-        } else {
-            printf("Connection succeeded\n");
-        }
-
-	/* Send request to host */
-        n = write(host_sd, newFirstLine, strlen(newFirstLine));
-	
-	memset(outbuf,0,sizeof(outbuf));
-
-        if (n < 0) {
-            printf("cannot write to socket\n");
-        } else {
-            printf("write successful\n");
-	    int amountRead;
-	    bp = outbuf;
-	    
-	    /* only read the headers up to \r\n\r\n */
-	    amountRead = readHeaders(host_sd,bp);
-
-	    printf("server response: %s\n",bp);
-	    write(new_sd,outbuf,amountRead);
-
-	    int responseCode;
-	    memset(temp, 0, sizeof(temp));
-
-	    /* Get first line of response and response code.*/
-	    firstLine_len = firstLine(bp, temp);
-	    responseCode = getResponseCode(temp);
-
-	    /* Get Transfer-Encoding or Content-Length header if present */
-	    memset(temp, 0, sizeof(temp));
-	    memset(tempHandler, 0, sizeof(tempHandler));
-	    getHeaderContent(bp, temp, "Transfer-Encoding:");
-	    getHeaderContent(bp, tempHandler, "Content-Length:");
-	      
-	    if (strcmp(tempHandler, "") != 0) { //Case 2: We are given Content-Length header
-	      printf("INSIDE CONTENT-LENGTH CASE\n");
-	      int contentLength = atoi(tempHandler);
-	      memset(outbuf,0,sizeof(outbuf));
-	      while(contentLength != 0) {
-		if(contentLength > BUFLEN){
-		  bytes_to_read = BUFLEN;
-		} else {
-		  bytes_to_read = contentLength;
-		}
-		printf("bytes_to_read is: %d\n",bytes_to_read);
-		if((amountRead = read(host_sd, outbuf, bytes_to_read)) > 0) {
-		  printf("amountRead: %d\n",amountRead);
-		  //printf("content body: %s\n",outbuf);
-		  write(new_sd, outbuf, amountRead);
-		  contentLength -= amountRead;
-		}
-		memset(outbuf,0,sizeof(outbuf));
-	      }
-	    } else if (strcmp(temp, "chunked") == 0) {  // Case 3: We are given Transfer-Encoding header
-	      printf("INSIDE CHUNKED CASE\n");
-
-		
-	      memset(temp,0,sizeof(temp));
-	      int bytesRead = readSocketLine(host_sd,temp);
-	      strptr = strtok(temp,"\r");
-	      bytes_to_read = (int)strtol(strptr,NULL,16);
-	      printf("bytes_to_read: %d\n",bytes_to_read);
-
-	      while(bytes_to_read != 0) {
-		int toRead;
-		bp = outbuf;
-		memset(outbuf,0,sizeof(outbuf));
-		memset(temp,0,sizeof(temp));
-		while(bytes_to_read > 0) {
-		  if(bytes_to_read > BUFLEN) {
-		    toRead = BUFLEN;
-		    bytes_to_read -= BUFLEN;
-		  } else {
-		    toRead = bytes_to_read;
-		    bytes_to_read = 0;
-		  }
-		  if((amountRead = read(host_sd, bp, toRead)) > 0) {
-		    printf("amountRead: %d\n", amountRead);
-		    //printf("chunk content: %s\n", outbuf);
-		    write(new_sd, outbuf, amountRead);
-		    memset(outbuf,0,sizeof(outbuf));
-		    if(amountRead < toRead) {
-		      toRead -= amountRead;
-		      while(toRead > 0) {
-			amountRead = read(host_sd, bp, toRead);
-			write(new_sd, outbuf, amountRead);
-			toRead -= amountRead;
-			memset(outbuf,0,sizeof(outbuf));
-		      }
-		    }
-		  }
-		}
-		amountRead = read(host_sd, temp, 2);
-		memset(temp,0,sizeof(temp));
-		bytesRead = readSocketLine(host_sd,temp);
-		int len = strlen(temp);
-		strptr = strtok(temp, ";");
-		if(strlen(strptr) == len){
-		  strptr = strtok(NULL, "\r");
-		  bytes_to_read = atoi(strptr);
-		  printf("bytes_to_read: %d\n",bytes_to_read);
-		} else {
-		  bytes_to_read = atoi(strptr);
-		  printf("bytes_to_read: %d\n",bytes_to_read);
-		}  
-	      }
-	    } else {
-		
-	    }
-	      
-        }
-        //sleep(5000);
-        close(host_sd);
-	close(new_sd);
+      if(strcmp(bp + (n-4), "\r\n\r\n") == 0){
+	break;
+      }
+      bp += n;
+      bytes_to_read -= n;
     }
+
+    
+    firstLine_len = firstLine(buf,temp);
+    strncpy(tempHandler,temp,sizeof(temp));
+	
+    strptr = strtok(tempHandler, " ");
+    strcpy(requestType, strptr);
+    printf("request type: %s\n", requestType);
+
+    /* Check if Method is a GET method */
+    if(strcmp(requestType,"GET") != 0) {
+      memset(outbuf,0,sizeof(outbuf));
+      strcpy(outbuf,"405 Method Not Allowed (Only a GET method is allowed)\n");
+      write(new_sd, outbuf, strlen(outbuf));
+      printf("Sent: %s\n", outbuf);
+      close(new_sd);
+      continue;
+    }
+
+    strptr = strtok(NULL, ":");
+    strptr2 = strtok(NULL, ":");
+    strptr3 = strtok(NULL, " ");
+    if(strptr3 != NULL) {
+      char buffer[BUFLEN];
+      memset(buffer,0,sizeof(buffer));
+      strcpy(buffer, strptr2 + 2);
+
+      strptr = strtok(buffer, "/");
+      strcpy(hostAddr, strptr);
+      strptr = strtok(NULL, " ");
+      if(strptr != NULL) {
+	strcpy(absolutePath, strptr);
+	memmove(absolutePath+1, absolutePath, strlen(absolutePath));
+	*absolutePath = '/';
+      } else {
+	strncpy(absolutePath, "/", 1);
+      }
+      strcpy (portNum, strptr3);
+    } else {
+      char buffer[BUFLEN];
+      memset(buffer,0,sizeof(buffer));
+
+      strptr = strtok(strptr2, " ");
+      strcpy(buffer, strptr + 2);
+      strptr = strtok(buffer, "/");
+      strcpy(hostAddr,strptr);
+      strptr = strtok(NULL, " ");
+      if(strptr != NULL) {
+	strcpy(absolutePath, strptr);
+	memmove(absolutePath+1, absolutePath, strlen(absolutePath));
+	*absolutePath = '/';
+      } else {
+	strncpy(absolutePath, "/", 1);
+      }
+      strncpy(portNum,"80",2);
+    }
+
+    printf("host: %s\n", hostAddr);
+    printf("port: %s\n", portNum);
+    printf("path: %s\n", absolutePath);
+
+    //check blacklist before making connection
+    if (fp != NULL) {
+      do {
+	if (fgets(line, 100, fp) != NULL) {
+	  strptr = strtok(line, ".");
+	  strptr = strtok(NULL, "."); //get host name of black list address
+	  strptr2 = strtok(hostAddr, ".");
+	  strptr2 = strtok(NULL, ".");
+	  if (*strptr == *strptr2) {
+	    printf("403 this URI is on black list");
+	    exit(1);
+	  }
+	  printf("black list: %s", line);
+	} else {
+	  break;
+	}
+      } while (1);
+      fclose(fp);
+    }
+
+    hostent = gethostbyname(hostAddr);
+    bzero((char *) &host, sizeof(host));
+    host.sin_family = AF_INET;
+    hostPort = atoi(portNum);
+    host.sin_port = htons(hostPort);
+    bcopy((char *) hostent->h_addr, (char *) &host.sin_addr.s_addr, hostent->h_length);
+
+    if ((host_sd = socket(AF_INET, SOCK_STREAM, 0)) == -1) {
+      fprintf(stderr, "Can't create a socket.\n");
+      exit(1);
+    }
+
+    //make new first line
+    char newFirstLine[BUFLEN];
+    memset(newFirstLine,0,sizeof(newFirstLine));
+    strcpy(newFirstLine, "GET ");
+    strcat(newFirstLine, absolutePath);
+    strcat(newFirstLine, " HTTP/1.1");
+    printf("new first line: %s\n", newFirstLine);
+
+    //delete first line from buf
+    while (firstLine_len > 0) {
+      memmove(buf, buf+1, strlen(buf));
+      firstLine_len--;
+    }
+    strcat(newFirstLine, buf);
+    printf("new request: %s\n", newFirstLine);
+
+    //connect to server
+    if (connect(host_sd,(struct sockaddr*) &host, sizeof(host)) < 0) {
+      printf("Connect failed (on port %d,  %s).\n", host.sin_port, inet_ntoa(host.sin_addr));
+      exit(1);
+    } else {
+      printf("Connection succeeded\n");
+    }
+
+    /* Send request to host */
+    n = write(host_sd, newFirstLine, strlen(newFirstLine));
+
+    if (n < 0) {
+      printf("cannot write to socket\n");
+    } else {
+      printf("write successful\n");
+      int amountRead;
+      bp = outbuf;
+      memset(outbuf,0,sizeof(outbuf));
+      
+      /* only read the headers up to \r\n\r\n */
+      amountRead = readHeaders(host_sd,bp);
+
+      printf("server response: %s\n",bp);
+      write(new_sd,outbuf,amountRead);
+
+      int responseCode;
+      memset(temp, 0, sizeof(temp));
+
+      /* Get first line of response and response code.*/
+      firstLine_len = firstLine(outbuf, temp);
+      responseCode = getResponseCode(temp);
+
+      /* Get Transfer-Encoding or Content-Length header if present */
+      memset(temp, 0, sizeof(temp));
+      memset(tempHandler, 0, sizeof(tempHandler));
+      getHeaderContent(bp, temp, "Transfer-Encoding:");
+      getHeaderContent(bp, tempHandler, "Content-Length:");
+	      
+      if (strcmp(tempHandler, "") != 0) { //Case 2: We are given Content-Length header
+	printf("INSIDE CONTENT-LENGTH CASE\n");
+	int contentLength = atoi(tempHandler);
+	memset(outbuf,0,sizeof(outbuf));
+	while(contentLength != 0) {
+	  if(contentLength > BUFLEN){
+	    bytes_to_read = BUFLEN;
+	  } else {
+	    bytes_to_read = contentLength;
+	  }
+	  printf("bytes_to_read is: %d\n",bytes_to_read);
+	  if((amountRead = read(host_sd, outbuf, bytes_to_read)) > 0) {
+	    printf("amountRead: %d\n",amountRead);
+	    //printf("content body: %s\n",outbuf);
+	    write(new_sd, outbuf, amountRead);
+	    contentLength -= amountRead;
+	  }
+	  memset(outbuf,0,sizeof(outbuf));
+	}
+      } else if (strcmp(temp, "chunked") == 0) {  // Case 3: We are given Transfer-Encoding header
+	printf("INSIDE CHUNKED CASE\n");
+
+		
+	memset(temp,0,sizeof(temp));
+	int bytesRead = readSocketLine(host_sd,temp);
+	write(new_sd,temp,bytesRead);
+	strptr = strtok(temp,"\r");
+	bytes_to_read = (int)strtol(strptr,NULL,16);
+	printf("bytes_to_read: %d\n",bytes_to_read);
+
+	while(bytes_to_read > 0) {
+	  int toRead;
+	  bp = outbuf;
+	  memset(outbuf,0,sizeof(outbuf));
+	  memset(temp,0,sizeof(temp));
+	  while(bytes_to_read > 0) {
+	    if(bytes_to_read > BUFLEN) {
+	      toRead = BUFLEN;
+	      bytes_to_read -= BUFLEN;
+	    } else {
+	      toRead = bytes_to_read;
+	      bytes_to_read = 0;
+	    }
+	    printf("toRead: %d\n",toRead);
+	    if((amountRead = read(host_sd, bp, toRead)) > 0) {
+	      printf("amountRead: %d\n", amountRead);
+	      //printf("chunk content: %s\n", outbuf);
+	      int result = write(new_sd, outbuf, amountRead);
+	      printf("result: %d\n",result);
+	      memset(outbuf,0,sizeof(outbuf));
+	      printf("toRead: %d\n",toRead);
+	      if(amountRead < toRead) {
+		toRead -= amountRead;
+		while(toRead > 0) {
+		  amountRead = read(host_sd, bp, toRead);
+		  printf("amountRead: %d\n",amountRead);
+		  write(new_sd, outbuf, amountRead);
+		  toRead -= amountRead;
+		  printf("toRead 2: %d\n",toRead);
+		  memset(outbuf,0,sizeof(outbuf));
+		}
+	      }
+	    }
+	  }
+	        
+	  amountRead = read(host_sd, temp, 2);
+	  printf("2 chars: %s\n",temp);
+	  write(new_sd,temp,amountRead);
+		
+	  memset(temp,0,sizeof(temp));
+	  bytesRead = readSocketLine(host_sd,temp);
+	  //memset(tempHandler,0,sizeof(tempHandler));
+	  //strncpy(tempHandler,temp,strlen(temp));
+	  write(new_sd,temp,bytesRead);
+	  
+	  int len = strlen(temp);
+	  strptr = strtok(temp, ";");
+	  
+		
+	  if(strlen(strptr) == len){
+	    printf("if case 1\n");
+	    strptr = strtok(temp, "\r");
+	    bytes_to_read = (int)strtol(strptr,NULL,16);
+	    printf("bytes_to_read: %d\n",bytes_to_read);
+	  } else {
+	    printf("if case 2\n");
+	    bytes_to_read = (int)strtol(strptr,NULL,16);
+	    printf("bytes_to_read: %d\n",bytes_to_read);
+	  }
+	  /*if(bytes_to_read == 0) {
+	    printf("end of response: %s\n",outbuf);
+	    strptr = &tempHandler[3];
+	    amountRead = read(host_sd,strptr,2);
+	    printf("tempHandler: %s\n",tempHandler);
+	    write(new_sd,tempHandler,5);
+	    }*/
+	}
+	memset(outbuf,0,sizeof(outbuf));
+	amountRead = read(host_sd, outbuf, 2);
+	
+	printf("end of response: %s\n",outbuf);
+	write(new_sd, outbuf, amountRead);
+      } else {
+		
+      }
+    }
+    // End of request so we close both sockets
+    printf("Request complete, closing sockets\n");
+    close(host_sd);
+    close(new_sd);
+  } // end of while loop
+  //sleep(5000);
+  printf("exiting\n");
+  close(host_sd);
+  close(new_sd);
 }
 
 int main(int argc, char **argv) {
