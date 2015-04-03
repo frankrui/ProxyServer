@@ -157,7 +157,7 @@ void request_handler(void* args) {
   int n, bytes_to_read;
   int server_sd, new_sd, client_len, port, hostPort, host_sd;
   struct sockaddr_in client,host, empty;
-  struct hostent *hostent;
+  struct hostent *hostent = malloc(sizeof(struct hostent));
   char *bp, buf[BUFLEN], outbuf[BUFLEN];
   char* strptr;
   char* strptr2;
@@ -169,14 +169,13 @@ void request_handler(void* args) {
   char temp[BUFLEN];
   char tempHandler[BUFLEN];
   char line[100];
-  bool firstTime = true;
   
   struct Argument * ptr = (struct Argument*) args;
   FILE* fp = ptr->fp;
   server_sd = (int) ptr->sd;
 
   while (1) {
-    firstTime = true;
+    
     memset(buf, 0, sizeof(buf));
     memset(portNum,0, sizeof(portNum));
     memset(hostAddr, 0, sizeof(hostAddr));
@@ -187,6 +186,7 @@ void request_handler(void* args) {
     memset(outbuf,0,sizeof(outbuf));
     memset(tempHandler,0,sizeof(tempHandler));
     client = empty;
+    host = empty;
 
     printf("Waiting to accept a connection\n");
     if ((new_sd = accept(server_sd, (struct sockaddr *)&client, &client_len)) == -1) {
@@ -210,7 +210,14 @@ void request_handler(void* args) {
       bp += n;
       bytes_to_read -= n;
     }
-
+    
+    if(n == 0 || n == -1) {
+      strcpy(outbuf,"HTTP/1.1 400 Bad Request\r\n\r\n");
+      write(new_sd,outbuf,strlen(outbuf));
+      close(new_sd);
+      printf("closed\n");
+      continue;
+    }
     
     firstLine_len = firstLine(buf,temp);
     strncpy(tempHandler,temp,sizeof(temp));
@@ -222,7 +229,7 @@ void request_handler(void* args) {
     /* Check if Method is a GET method */
     if(strcmp(requestType,"GET") != 0) {
       memset(outbuf,0,sizeof(outbuf));
-      strcpy(outbuf,"405 Method Not Allowed (Only a GET method is allowed)\n");
+      strcpy(outbuf,"HTTP/1.1 405 Method Not Allowed (Only a GET method is allowed)\r\n\r\n");
       write(new_sd, outbuf, strlen(outbuf));
       printf("Sent: %s\n", outbuf);
       close(new_sd);
@@ -230,42 +237,40 @@ void request_handler(void* args) {
     }
 
     strptr = strtok(NULL, ":");
-    strptr2 = strtok(NULL, ":");
+    printf("strptr: %s\n",strptr);
+    strptr += 7;
+    printf("strptr: %s\n",strptr);
+    strptr2 = strtok(strptr, "/");
+    printf("strptr2: %s\n",strptr2);
     strptr3 = strtok(NULL, " ");
-    if(strptr3 != NULL) {
-      char buffer[BUFLEN];
-      memset(buffer,0,sizeof(buffer));
-      strcpy(buffer, strptr2 + 2);
+    printf("strptr3: %s\n",strptr3);
+    
+    int length = strlen(strptr2);
+    strptr = strtok(strptr2,":");
 
-      strptr = strtok(buffer, "/");
-      strcpy(hostAddr, strptr);
-      strptr = strtok(NULL, " ");
-      if(strptr != NULL) {
-	strcpy(absolutePath, strptr);
-	memmove(absolutePath+1, absolutePath, strlen(absolutePath));
-	*absolutePath = '/';
-      } else {
-	strncpy(absolutePath, "/", 1);
-      }
-      strcpy (portNum, strptr3);
-    } else {
-      char buffer[BUFLEN];
-      memset(buffer,0,sizeof(buffer));
-
-      strptr = strtok(strptr2, " ");
-      strcpy(buffer, strptr + 2);
-      strptr = strtok(buffer, "/");
-      strcpy(hostAddr,strptr);
-      strptr = strtok(NULL, " ");
-      if(strptr != NULL) {
-	strcpy(absolutePath, strptr);
-	memmove(absolutePath+1, absolutePath, strlen(absolutePath));
-	*absolutePath = '/';
-      } else {
-	strncpy(absolutePath, "/", 1);
-      }
+    if(strlen(strptr) == length) { // No port
+      strncpy(hostAddr,strptr,strlen(strptr));
       strncpy(portNum,"80",2);
+      if(strcmp(strptr3,"HTTP/1.1") == 0){
+	*absolutePath = '/';
+      } else {
+	*absolutePath = '/';
+	strptr = absolutePath + 1;
+	strncpy(strptr, strptr3, strlen(strptr3));
+      }
+    } else {                        // has port
+      strncpy(hostAddr,strptr,strlen(strptr));
+      strptr = strtok(NULL, " ");
+      strncpy(portNum,strptr,strlen(strptr));
+      if(strcmp(strptr3,"HTTP/1.1") == 0){
+	*absolutePath = '/';
+      } else {
+	*absolutePath = '/';
+	strptr = absolutePath + 1;
+	strncpy(strptr, strptr3, strlen(strptr3));
+      }
     }
+    memset(tempHandler, 0, sizeof(tempHandler));
 
     printf("host: %s\n", hostAddr);
     printf("port: %s\n", portNum);
@@ -280,7 +285,7 @@ void request_handler(void* args) {
 	  strptr2 = strtok(hostAddr, ".");
 	  strptr2 = strtok(NULL, ".");
 	  if (*strptr == *strptr2) {
-	    printf("403 this URI is on black list");
+	    printf("HTTP/1.1 403 Forbidden\r\n\r\n");
 	    exit(1);
 	  }
 	  printf("black list: %s", line);
@@ -293,9 +298,12 @@ void request_handler(void* args) {
 
     hostent = gethostbyname(hostAddr);
     bzero((char *) &host, sizeof(host));
+    bzero((char *) hostent, sizeof(hostent));
+
     host.sin_family = AF_INET;
     hostPort = atoi(portNum);
     host.sin_port = htons(hostPort);
+    
     bcopy((char *) hostent->h_addr, (char *) &host.sin_addr.s_addr, hostent->h_length);
 
     if ((host_sd = socket(AF_INET, SOCK_STREAM, 0)) == -1) {
@@ -521,7 +529,7 @@ int main(int argc, char **argv) {
     server.sin_family = AF_INET;
     server.sin_port = htons(port);
     server.sin_addr.s_addr = htonl(INADDR_ANY);
-    if (bind(args.sd, (struct sockaddr *)&server, sizeof(server)) ==-1) {
+    if (bind(args.sd, (struct sockaddr *)&server, sizeof(server)) == -1) {
         fprintf(stderr, "Can't bind name to socket.\n");
         exit(1);
     }
