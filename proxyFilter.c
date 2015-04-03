@@ -71,8 +71,9 @@ bool isHundredLevel(int num) {
 // Gets the response code from given first line of HTTP response.
 int getResponseCode(char* firstLine) {
   printf("in function getResponseCode\n");
-  char* ptr = strtok(firstLine," ");
-  ptr = strtok(NULL, " ");
+  char* saveDest;
+  char* ptr = strtok_r(firstLine," ",&saveDest);
+  ptr = strtok_r(NULL, " ",&saveDest);
   int responseCode = atoi(ptr);
   printf("response Code: %d\n", responseCode);
   return responseCode;
@@ -169,6 +170,14 @@ void request_handler(void* args) {
   char temp[BUFLEN];
   char tempHandler[BUFLEN];
   char line[100];
+  char* save0;
+  char* save1;
+  char* save2;
+  char* save3;
+  char* save4;
+  char* save5;
+  char* save6;
+  char* save7;
   
   struct Argument * ptr = (struct Argument*) args;
   FILE* fp = ptr->fp;
@@ -222,7 +231,7 @@ void request_handler(void* args) {
     firstLine_len = firstLine(buf,temp);
     strncpy(tempHandler,temp,sizeof(temp));
 	
-    strptr = strtok(tempHandler, " ");
+    strptr = strtok_r(tempHandler, " ",&save0);
     strcpy(requestType, strptr);
     printf("request type: %s\n", requestType);
 
@@ -236,17 +245,17 @@ void request_handler(void* args) {
       continue;
     }
 
-    strptr = strtok(NULL, ":");
+    strptr = strtok_r(NULL, ":",&save0);
     printf("strptr: %s\n",strptr);
     strptr += 7;
     printf("strptr: %s\n",strptr);
-    strptr2 = strtok(strptr, "/");
+    strptr2 = strtok_r(strptr, "/",&save1);
     printf("strptr2: %s\n",strptr2);
-    strptr3 = strtok(NULL, " ");
+    strptr3 = strtok_r(NULL, " ",&save1);
     printf("strptr3: %s\n",strptr3);
     
     int length = strlen(strptr2);
-    strptr = strtok(strptr2,":");
+    strptr = strtok_r(strptr2,":",&save2);
 
     if(strlen(strptr) == length) { // No port
       strncpy(hostAddr,strptr,strlen(strptr));
@@ -260,7 +269,7 @@ void request_handler(void* args) {
       }
     } else {                        // has port
       strncpy(hostAddr,strptr,strlen(strptr));
-      strptr = strtok(NULL, " ");
+      strptr = strtok_r(NULL, " ",&save2);
       strncpy(portNum,strptr,strlen(strptr));
       if(strcmp(strptr3,"HTTP/1.1") == 0){
 	*absolutePath = '/';
@@ -280,10 +289,10 @@ void request_handler(void* args) {
     if (fp != NULL) {
       do {
 	if (fgets(line, 100, fp) != NULL) {
-	  strptr = strtok(line, ".");
-	  strptr = strtok(NULL, "."); //get host name of black list address
-	  strptr2 = strtok(hostAddr, ".");
-	  strptr2 = strtok(NULL, ".");
+	  strptr = strtok_r(line, ".",&save3);
+	  strptr = strtok_r(NULL, ".",&save3); //get host name of black list address
+	  strptr2 = strtok_r(hostAddr, ".",&save4);
+	  strptr2 = strtok_r(NULL, ".",&save4);
 	  if (*strptr == *strptr2) {
 	    printf("HTTP/1.1 403 Forbidden\r\n\r\n");
 	    exit(1);
@@ -350,7 +359,8 @@ void request_handler(void* args) {
       amountRead = readHeaders(host_sd,bp);
 
       printf("server response: %s\n",bp);
-      write(new_sd,outbuf,amountRead);
+      int written = write(new_sd,outbuf,amountRead);
+      printf("amountWritten: %d\n",written);
 
       int responseCode;
       memset(temp, 0, sizeof(temp));
@@ -391,7 +401,7 @@ void request_handler(void* args) {
 	memset(temp,0,sizeof(temp));
 	int bytesRead = readSocketLine(host_sd,temp);
 	write(new_sd,temp,bytesRead);
-	strptr = strtok(temp,"\r");
+	strptr = strtok_r(temp,"\r",&save5);
 	bytes_to_read = (int)strtol(strptr,NULL,16);
 	printf("bytes_to_read: %d\n",bytes_to_read);
 
@@ -441,12 +451,12 @@ void request_handler(void* args) {
 	  write(new_sd,temp,bytesRead);
 	  
 	  int len = strlen(temp);
-	  strptr = strtok(temp, ";");
+	  strptr = strtok_r(temp, ";",&save6);
 	  
 		
 	  if(strlen(strptr) == len){
 	    printf("if case 1\n");
-	    strptr = strtok(temp, "\r");
+	    strptr = strtok_r(temp, "\r",&save7);
 	    bytes_to_read = (int)strtol(strptr,NULL,16);
 	    printf("bytes_to_read: %d\n",bytes_to_read);
 	  } else {
@@ -542,7 +552,7 @@ int main(int argc, char **argv) {
     int error;
     int i = 0;
 
-    while(i < 1) {
+    while(i < 4) {
       threads[i] = (struct Thread*) createThread((void*) &request_handler, (void*) &args);
       error = runThread(threads[i],NULL);
       if (error != -10) {
