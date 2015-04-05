@@ -155,7 +155,7 @@ int firstLine(char* request, char* returnString) {
 void request_handler(void* args) {
   int firstLine_len;
   int bodyLength;
-  int n, bytes_to_read;
+  int n, bytes_to_read, cacheName;
   int server_sd, new_sd, client_len, port, hostPort, host_sd;
   struct sockaddr_in client,host, empty;
   struct hostent *hostent = malloc(sizeof(struct hostent));
@@ -170,6 +170,9 @@ void request_handler(void* args) {
   char temp[BUFLEN];
   char tempHandler[BUFLEN];
   char line[100];
+  char name[255];
+  char dir[255];
+  char cacheLine[5000];
   char* save0;
   char* save1;
   char* save2;
@@ -178,9 +181,11 @@ void request_handler(void* args) {
   char* save5;
   char* save6;
   char* save7;
-  
+  int isBreak = 0;
+
   struct Argument * ptr = (struct Argument*) args;
   FILE* fp = ptr->fp;
+  FILE* cacheFile;
   server_sd = (int) ptr->sd;
 
   while (1) {
@@ -305,6 +310,36 @@ void request_handler(void* args) {
       fclose(fp);
     }
 
+    //check cache
+    for (n=0; n < strlen(hostAddr); n++) {
+      cacheName = cacheName + (int) hostAddr[n];
+    }
+    for (n=0; n<strlen(absolutePath); n++) {
+      cacheName = cacheName + (int) absolutePath[n];
+    }
+    sprintf(name, "%i", cacheName);
+    strcpy(dir, "./cache/");
+    strcat(dir, name);
+    cacheFile = fopen(dir, "r");
+    if (cacheFile != NULL) {
+        do {
+            memset(cacheLine, 0, sizeof(cacheLine));
+            n = fread(cacheLine, 1, sizeof(cacheLine), cacheFile);
+            write(new_sd, cacheLine, n);
+            if (feof(cacheFile)) {
+              close(new_sd);
+              fclose(cacheFile);
+              isBreak = 1;
+              printf("HITTING CACHE!");
+              break;
+            }
+        } while (1);
+    }
+
+    if (isBreak) {
+      break;
+    }
+
     hostent = gethostbyname(hostAddr);
     bzero((char *) &host, sizeof(host));
     bzero((char *) hostent, sizeof(hostent));
@@ -354,11 +389,21 @@ void request_handler(void* args) {
       int amountRead;
       bp = outbuf;
       memset(outbuf,0,sizeof(outbuf));
+
+      //cache miss create temp cache file 
+      int tempFileName = rand();
+      memset(name, 0, sizeof(name));
+      memset(dir, 0, sizeof(dir));
+      strcpy(dir, "./cache/");
+      sprintf(name, "%i", tempFileName);
+      strcat(dir, name);
+      cacheFile = fopen(dir, "w+");
       
       /* only read the headers up to \r\n\r\n */
       amountRead = readHeaders(host_sd,bp);
 
       printf("server response: %s\n",bp);
+      fwrite(outbuf, 1, amountRead, cacheFile);
       int written = write(new_sd,outbuf,amountRead);
       printf("amountWritten: %d\n",written);
 
@@ -389,6 +434,7 @@ void request_handler(void* args) {
 	  if((amountRead = read(host_sd, outbuf, bytes_to_read)) > 0) {
 	    printf("amountRead: %d\n",amountRead);
 	    //printf("content body: %s\n",outbuf);
+      fwrite(outbuf, 1, amountRead, cacheFile);
 	    write(new_sd, outbuf, amountRead);
 	    contentLength -= amountRead;
 	  }
@@ -400,6 +446,7 @@ void request_handler(void* args) {
 		
 	memset(temp,0,sizeof(temp));
 	int bytesRead = readSocketLine(host_sd,temp);
+  fwrite(outbuf, 1, bytesRead, cacheFile);
 	write(new_sd,temp,bytesRead);
 	strptr = strtok_r(temp,"\r",&save5);
 	bytes_to_read = (int)strtol(strptr,NULL,16);
@@ -422,6 +469,7 @@ void request_handler(void* args) {
 	    if((amountRead = read(host_sd, bp, toRead)) > 0) {
 	      printf("amountRead: %d\n", amountRead);
 	      //printf("chunk content: %s\n", outbuf);
+        fwrite(outbuf, 1, amountRead, cacheFile);
 	      int result = write(new_sd, outbuf, amountRead);
 	      printf("result: %d\n",result);
 	      memset(outbuf,0,sizeof(outbuf));
@@ -431,6 +479,7 @@ void request_handler(void* args) {
 		while(toRead > 0) {
 		  amountRead = read(host_sd, bp, toRead);
 		  printf("amountRead: %d\n",amountRead);
+      fwrite(outbuf, 1, amountRead, cacheFile);
 		  write(new_sd, outbuf, amountRead);
 		  toRead -= amountRead;
 		  printf("toRead 2: %d\n",toRead);
@@ -442,12 +491,14 @@ void request_handler(void* args) {
 	        
 	  amountRead = read(host_sd, temp, 2);
 	  printf("2 chars: %s\n",temp);
+    fwrite(outbuf, 1, amountRead, cacheFile);
 	  write(new_sd,temp,amountRead);
 		
 	  memset(temp,0,sizeof(temp));
 	  bytesRead = readSocketLine(host_sd,temp);
 	  //memset(tempHandler,0,sizeof(tempHandler));
 	  //strncpy(tempHandler,temp,strlen(temp));
+    fwrite(outbuf, 1, amountRead, cacheFile);
 	  write(new_sd,temp,bytesRead);
 	  
 	  int len = strlen(temp);
@@ -476,11 +527,30 @@ void request_handler(void* args) {
 	amountRead = read(host_sd, outbuf, 2);
 	
 	printf("end of response: %s\n",outbuf);
+  fwrite(outbuf, 1, amountRead, cacheFile);
 	write(new_sd, outbuf, amountRead);
       } else {
 		
       }
     }
+    //rename cache file 
+    fclose(cacheFile);
+    memset(name, 0, sizeof(name));
+    memset(dir, 0, sizeof(name));
+    int tempFileName;
+    for (n=0; n<strlen(hostAddr); n++) {
+        tempFileName = tempFileName + (int) hostAddr[n];
+    }
+    for (n=0; n<strlen(absolutePath); n++) {
+        tempFileName = tempFileName + (int) absolutePath[n];
+    }
+    char newName[255];
+    memset(newName, 0, sizeof(newName));
+    sprintf(name, "%i", tempFileName);
+    strcpy(newName, "./cache/");
+    strcat(newName, name);
+    rename(dir, newName);
+
     // End of request so we close both sockets
     printf("Request complete, closing sockets\n");
     close(host_sd);
