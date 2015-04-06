@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/types.h>
+#include <dirent.h>
 #include <sys/socket.h>
 #include <netdb.h>
 #include <netinet/in.h>
@@ -60,9 +61,9 @@ int readSocketLine(int sd, char* buf) {
 }
 
 // Returns true if num was an 1xx level code.
-bool isHundredLevel(int num) {
+bool isFiveLevel(int num) {
   int temp = num/100;
-  if(temp == 1)
+  if(temp >= 1)
     return true;
   return false;
 }
@@ -128,9 +129,9 @@ void getHeaderContent(char* buf, char* returnString, char* headerType) {
     }
     if(strcmp(header, headerType) == 0) {
         hp += (headerLength + 1);
-	strncpy(returnString, hp, (lineLength - headerLength - 1));
-	printf("header content: %s\n",returnString);
-	return;
+  strncpy(returnString, hp, (lineLength - headerLength - 1));
+  printf("header content: %s\n",returnString);
+  return;
     }
     // go to next line
     bp += (lineLength + 2);
@@ -155,7 +156,7 @@ int firstLine(char* request, char* returnString) {
 void request_handler(void* args) {
   int firstLine_len;
   int bodyLength;
-  int n, bytes_to_read;
+  int n, bytes_to_read, cacheName, m, isBreak;
   int server_sd, new_sd, client_len, port, hostPort, host_sd;
   struct sockaddr_in client,host, empty;
   struct hostent *hostent = malloc(sizeof(struct hostent));
@@ -170,6 +171,9 @@ void request_handler(void* args) {
   char temp[BUFLEN];
   char tempHandler[BUFLEN];
   char line[100];
+  char name[255];
+  char dir[255];
+  char cacheLine[5000];
   char* save0;
   char* save1;
   char* save2;
@@ -178,9 +182,10 @@ void request_handler(void* args) {
   char* save5;
   char* save6;
   char* save7;
-  
+
   struct Argument * ptr = (struct Argument*) args;
   FILE* fp = ptr->fp;
+  FILE* cacheFile;
   server_sd = (int) ptr->sd;
 
   while (1) {
@@ -196,6 +201,7 @@ void request_handler(void* args) {
     memset(tempHandler,0,sizeof(tempHandler));
     client = empty;
     host = empty;
+    isBreak = 0;
 
     printf("Waiting to accept a connection\n");
     if ((new_sd = accept(server_sd, (struct sockaddr *)&client, &client_len)) == -1) {
@@ -207,12 +213,6 @@ void request_handler(void* args) {
     while((n = read(new_sd, bp, bytes_to_read)) > 0) {
       printf("request:%s\n", bp);
       printf("length of request:%d\n", n);
-	       /*if(*(bp + (n-1)) == '\n' && 
-	       	  *(bp + (n-2)) == '\r' && 
-		  *(bp + (n-3)) == '\n' && 
-		  *(bp + (n-4)) == '\r') {
-		 break;
-		 }*/
       if(strcmp(bp + (n-4), "\r\n\r\n") == 0){
 	break;
       }
@@ -230,7 +230,7 @@ void request_handler(void* args) {
     
     firstLine_len = firstLine(buf,temp);
     strncpy(tempHandler,temp,sizeof(temp));
-	
+  
     strptr = strtok_r(tempHandler, " ",&save0);
     strcpy(requestType, strptr);
     printf("request type: %s\n", requestType);
@@ -238,7 +238,7 @@ void request_handler(void* args) {
     /* Check if Method is a GET method */
     if(strcmp(requestType,"GET") != 0) {
       memset(outbuf,0,sizeof(outbuf));
-      strcpy(outbuf,"HTTP/1.1 405 Method Not Allowed (Only a GET method is allowed)\r\n\r\n");
+      strcpy(outbuf,"HTTP/1.1 405 Method Not Allowed\r\nAllow: GET\r\n\r\n");
       write(new_sd, outbuf, strlen(outbuf));
       printf("Sent: %s\n", outbuf);
       close(new_sd);
@@ -294,15 +294,54 @@ void request_handler(void* args) {
 	  strptr2 = strtok_r(hostAddr, ".",&save4);
 	  strptr2 = strtok_r(NULL, ".",&save4);
 	  if (*strptr == *strptr2) {
-	    printf("HTTP/1.1 403 Forbidden\r\n\r\n");
-	    exit(1);
+	    strcpy(outbuf,"HTTP/1.1 403 Forbidden\r\n\r\n");
+	    printf("sent: %s\n", outbuf);
+	    isBreak = 1;
+	    break;
 	  }
-	  printf("black list: %s", line);
+	  printf("black list: %s\n", line);
 	} else {
 	  break;
 	}
       } while (1);
       fclose(fp);
+      if(isBreak)
+	continue;
+    }
+
+    //check cache
+    cacheName = 0;
+    memset(name, 0, sizeof(name));
+    memset(dir, 0, sizeof(dir));
+    for (m=0; m < strlen(hostAddr); m++) {
+      cacheName = cacheName + (int) hostAddr[m];
+    }
+    for (m=0; m<strlen(absolutePath); m++) {
+      cacheName = cacheName + (int) absolutePath[m];
+    }
+    sprintf(name, "%i", cacheName);
+    strcpy(dir, "./cache/");
+    strcat(dir, name);
+    cacheFile = fopen(dir, "r");
+    if (cacheFile != NULL) {
+        printf("cache hit; name: %i\n", cacheName);
+        do {
+            memset(cacheLine, 0, sizeof(cacheLine));
+            n = fread(cacheLine, 1, sizeof(cacheLine), cacheFile);
+            write(new_sd, cacheLine, n);
+            if (feof(cacheFile)) {
+              close(new_sd);
+              fclose(cacheFile);
+              isBreak = 1;
+              printf("sent cache files to client.\n");
+              break;
+            }
+        } while (1);
+    }
+
+    if (isBreak) {
+      close(new_sd);
+      continue;
     }
 
     hostent = gethostbyname(hostAddr);
@@ -339,7 +378,9 @@ void request_handler(void* args) {
     //connect to server
     if (connect(host_sd,(struct sockaddr*) &host, sizeof(host)) < 0) {
       printf("Connect failed (on port %d,  %s).\n", host.sin_port, inet_ntoa(host.sin_addr));
-      exit(1);
+      strcpy(outbuf,"HTTP/1.1 503 Service Unavailable\r\n\r\n");
+      write(new_sd,outbuf,strlen(outbuf));
+      continue;
     } else {
       printf("Connection succeeded\n");
     }
@@ -349,6 +390,11 @@ void request_handler(void* args) {
 
     if (n < 0) {
       printf("cannot write to socket\n");
+      strcpy(outbuf,"HTTP/1.1 500 Internal Server Error\r\n\r\n");
+      write(new_sd,outbuf,strlen(outbuf));
+      close(host_sd);
+      close(new_sd);
+      continue;
     } else {
       printf("write successful\n");
       int amountRead;
@@ -357,10 +403,34 @@ void request_handler(void* args) {
       
       /* only read the headers up to \r\n\r\n */
       amountRead = readHeaders(host_sd,bp);
+      if(amountRead == -1) {
+	strcpy(outbuf,"HTTP/1.1 500 Internal Server Error\r\n\r\n");
+	write(new_sd,outbuf,strlen(outbuf));
+	close(new_sd);
+	close(host_sd);
+	continue;
+      }
+
+      //cache miss create temp cache file 
+      int tempFileName = rand();
+      printf("cache miss; temporary name: %d\n", tempFileName);
+      memset(name, 0, sizeof(name));
+      memset(dir, 0, sizeof(dir));
+      strcpy(dir, "./cache/");
+      sprintf(name, "%i", tempFileName);
+      strcat(dir, name);
+      cacheFile = fopen(dir, "w+");
 
       printf("server response: %s\n",bp);
+      fwrite(outbuf, 1, amountRead, cacheFile);
       int written = write(new_sd,outbuf,amountRead);
-      printf("amountWritten: %d\n",written);
+      if(written == -1) {
+	fclose(cacheFile);
+	remove(dir);
+	close(new_sd);
+	close(host_sd);
+	continue;
+      }
 
       int responseCode;
       memset(temp, 0, sizeof(temp));
@@ -374,7 +444,7 @@ void request_handler(void* args) {
       memset(tempHandler, 0, sizeof(tempHandler));
       getHeaderContent(bp, temp, "Transfer-Encoding:");
       getHeaderContent(bp, tempHandler, "Content-Length:");
-	      
+      
       if (strcmp(tempHandler, "") != 0) { //Case 2: We are given Content-Length header
 	printf("INSIDE CONTENT-LENGTH CASE\n");
 	int contentLength = atoi(tempHandler);
@@ -389,18 +459,45 @@ void request_handler(void* args) {
 	  if((amountRead = read(host_sd, outbuf, bytes_to_read)) > 0) {
 	    printf("amountRead: %d\n",amountRead);
 	    //printf("content body: %s\n",outbuf);
-	    write(new_sd, outbuf, amountRead);
+	    fwrite(outbuf, 1, amountRead, cacheFile);
+	    written = write(new_sd, outbuf, amountRead);
+	    if(written == -1) {
+	      fclose(cacheFile);
+	      remove(dir);
+	      close(new_sd);
+	      close(host_sd);
+	      isBreak = 1;
+	      break;
+	    }
 	    contentLength -= amountRead;
+	  } else {
+	    strcpy(outbuf,"HTTP/1.1 500 Internal Server Error\r\n\r\n");
+	    write(new_sd,outbuf,strlen(outbuf));
+	    fclose(cacheFile);
+	    remove(dir);
+	    close(new_sd);
+	    close(host_sd);
+	    isBreak = 1;
+	    break;
 	  }
 	  memset(outbuf,0,sizeof(outbuf));
 	}
       } else if (strcmp(temp, "chunked") == 0) {  // Case 3: We are given Transfer-Encoding header
 	printf("INSIDE CHUNKED CASE\n");
 
-		
+    
 	memset(temp,0,sizeof(temp));
 	int bytesRead = readSocketLine(host_sd,temp);
-	write(new_sd,temp,bytesRead);
+	fwrite(outbuf, 1, bytesRead, cacheFile);
+	written = write(new_sd,temp,bytesRead);
+	if(written == -1) {
+	  fclose(cacheFile);
+	  remove(dir);
+	  close(new_sd);
+	  close(host_sd);
+	  continue;
+	}
+	
 	strptr = strtok_r(temp,"\r",&save5);
 	bytes_to_read = (int)strtol(strptr,NULL,16);
 	printf("bytes_to_read: %d\n",bytes_to_read);
@@ -422,65 +519,137 @@ void request_handler(void* args) {
 	    if((amountRead = read(host_sd, bp, toRead)) > 0) {
 	      printf("amountRead: %d\n", amountRead);
 	      //printf("chunk content: %s\n", outbuf);
-	      int result = write(new_sd, outbuf, amountRead);
-	      printf("result: %d\n",result);
+	      fwrite(outbuf, 1, amountRead, cacheFile);
+	      written = write(new_sd, outbuf, amountRead);
+	      if(written == -1) {
+		fclose(cacheFile);
+		remove(dir);
+	        close(new_sd);
+		close(host_sd);
+		isBreak = 1;
+		break;
+	      }
+	      //printf("written: %d\n",written);
 	      memset(outbuf,0,sizeof(outbuf));
 	      printf("toRead: %d\n",toRead);
 	      if(amountRead < toRead) {
 		toRead -= amountRead;
 		while(toRead > 0) {
 		  amountRead = read(host_sd, bp, toRead);
+		  if(amountRead == -1) {
+		     strcpy(outbuf,"HTTP/1.1 500 Internal Server Error\r\n\r\n");
+		     write(new_sd,outbuf,strlen(outbuf));
+		     fclose(cacheFile);
+		     remove(dir);
+		     close(new_sd);
+		     close(host_sd);
+		     isBreak = 1;
+		     break;
+		  }
 		  printf("amountRead: %d\n",amountRead);
-		  write(new_sd, outbuf, amountRead);
+		  fwrite(outbuf, 1, amountRead, cacheFile);
+		  written = write(new_sd, outbuf, amountRead);
+		  if(written == -1) {
+		    fclose(cacheFile);
+		    remove(dir);
+		    close(new_sd);
+		    close(host_sd);
+		    isBreak = 1;
+		    break;
+		  }
 		  toRead -= amountRead;
 		  printf("toRead 2: %d\n",toRead);
 		  memset(outbuf,0,sizeof(outbuf));
 		}
+		if(isBreak)
+		  break;
 	      }
+	    } else {
+	      strcpy(outbuf,"HTTP/1.1 500 Internal Server Error\r\n\r\n");
+	      write(new_sd,outbuf,strlen(outbuf));
+	      fclose(cacheFile);
+	      remove(dir);
+	      close(new_sd);
+	      close(host_sd);
+	      isBreak = 1;
+	      break;
 	    }
 	  }
-	        
+	  if(isBreak)
+	    break;
+	  
 	  amountRead = read(host_sd, temp, 2);
+	  if(amountRead == -1) {
+	    strcpy(outbuf,"HTTP/1.1 500 Internal Server Error\r\n\r\n");
+	    write(new_sd,outbuf,strlen(outbuf));
+	    fclose(cacheFile);
+	    remove(dir);
+	    close(new_sd);
+	    close(host_sd);
+	    isBreak = 1;
+	    break;
+	  }
 	  printf("2 chars: %s\n",temp);
-	  write(new_sd,temp,amountRead);
-		
+	  fwrite(outbuf, 1, amountRead, cacheFile);
+	  written = write(new_sd,temp,amountRead);
+	  if(written == -1) {
+	    fclose(cacheFile);
+	    remove(dir);
+	    close(new_sd);
+	    close(host_sd);
+	    isBreak = 1;
+	    break;
+	  }
+    
 	  memset(temp,0,sizeof(temp));
 	  bytesRead = readSocketLine(host_sd,temp);
 	  //memset(tempHandler,0,sizeof(tempHandler));
 	  //strncpy(tempHandler,temp,strlen(temp));
+	  fwrite(outbuf, 1, amountRead, cacheFile);
 	  write(new_sd,temp,bytesRead);
-	  
+    
 	  int len = strlen(temp);
 	  strptr = strtok_r(temp, ";",&save6);
-	  
-		
+    
+    
 	  if(strlen(strptr) == len){
-	    printf("if case 1\n");
 	    strptr = strtok_r(temp, "\r",&save7);
 	    bytes_to_read = (int)strtol(strptr,NULL,16);
 	    printf("bytes_to_read: %d\n",bytes_to_read);
 	  } else {
-	    printf("if case 2\n");
 	    bytes_to_read = (int)strtol(strptr,NULL,16);
 	    printf("bytes_to_read: %d\n",bytes_to_read);
 	  }
-	  /*if(bytes_to_read == 0) {
-	    printf("end of response: %s\n",outbuf);
-	    strptr = &tempHandler[3];
-	    amountRead = read(host_sd,strptr,2);
-	    printf("tempHandler: %s\n",tempHandler);
-	    write(new_sd,tempHandler,5);
-	    }*/
 	}
 	memset(outbuf,0,sizeof(outbuf));
 	amountRead = read(host_sd, outbuf, 2);
-	
+  
 	printf("end of response: %s\n",outbuf);
+	fwrite(outbuf, 1, amountRead, cacheFile);
 	write(new_sd, outbuf, amountRead);
-      } else {
-		
       }
     }
+    if(isBreak)
+      continue;
+    
+    //rename cache file 
+    fclose(cacheFile);
+    memset(name, 0, sizeof(name));
+    char newName[255];
+    memset(newName, 0, sizeof(newName));
+    int tempFileName = 0;
+    for (m=0; m<strlen(hostAddr); m++) {
+        tempFileName = tempFileName + (int) hostAddr[m];
+    }
+    for (m=0; m<strlen(absolutePath); m++) {
+        tempFileName = tempFileName + (int) absolutePath[m];
+    }
+    printf("cache miss; final file name: %i\n", tempFileName);
+    sprintf(name, "%i", tempFileName);
+    strcpy(newName, "./cache/");
+    strcat(newName, name);
+    rename(dir, newName);
+
     // End of request so we close both sockets
     printf("Request complete, closing sockets\n");
     close(host_sd);
@@ -547,6 +716,10 @@ int main(int argc, char **argv) {
     /* Listen on socket. */
     listen(args.sd, 5);
 
+    /* Create a Cache Directory if it doesn't already exist */
+    mkdir("cache",0777);
+    
+
     /* Create 4 worker threads. */
     struct Thread *threads[4];
     int error;
@@ -556,7 +729,7 @@ int main(int argc, char **argv) {
       threads[i] = (struct Thread*) createThread((void*) &request_handler, (void*) &args);
       error = runThread(threads[i],NULL);
       if (error != -10) {
-	i++;
+  i++;
       }
     }
     int join0 = joinThread(threads[0],NULL);
