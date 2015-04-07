@@ -11,6 +11,8 @@
 #include <time.h>
 #include <stdbool.h>
 #include <math.h>
+#include <errno.h>
+#include <signal.h>
 #define SERVER_TCP_PORT 8080
 #define BUFLEN 32000 //make it smaller for testing
 
@@ -189,6 +191,8 @@ void request_handler(void* args) {
   FILE* cacheFile;
   server_sd = (int) ptr->sd;
 
+  signal(SIGPIPE, SIG_IGN);
+
   while (1) {
     
     memset(buf, 0, sizeof(buf));
@@ -315,11 +319,11 @@ void request_handler(void* args) {
 	     } else {
 	       break;
 	     }
-    } while (1);
+      } while (1);
 
-  if(isBreak)
-	   continue;
-}
+      if(isBreak)
+	continue;
+    }
 
     //check cache
     cacheName = 0;
@@ -470,7 +474,6 @@ void request_handler(void* args) {
 	  printf("bytes_to_read is: %d\n",bytes_to_read);
 	  if((amountRead = read(host_sd, outbuf, bytes_to_read)) > 0) {
 	    printf("amountRead: %d\n",amountRead);
-	    //printf("content body: %s\n",outbuf);
 	    fwrite(outbuf, 1, amountRead, cacheFile);
 	    written = write(new_sd, outbuf, amountRead);
 	    if(written == -1) {
@@ -530,7 +533,6 @@ void request_handler(void* args) {
 	    printf("toRead: %d\n",toRead);
 	    if((amountRead = read(host_sd, bp, toRead)) > 0) {
 	      printf("amountRead: %d\n", amountRead);
-	      //printf("chunk content: %s\n", outbuf);
 	      fwrite(outbuf, 1, amountRead, cacheFile);
 	      written = write(new_sd, outbuf, amountRead);
 	      if(written == -1) {
@@ -541,7 +543,6 @@ void request_handler(void* args) {
 		isBreak = 1;
 		break;
 	      }
-	      //printf("written: %d\n",written);
 	      memset(outbuf,0,sizeof(outbuf));
 	      printf("toRead: %d\n",toRead);
 	      if(amountRead < toRead) {
@@ -615,8 +616,6 @@ void request_handler(void* args) {
     
 	  memset(temp,0,sizeof(temp));
 	  bytesRead = readSocketLine(host_sd,temp);
-	  //memset(tempHandler,0,sizeof(tempHandler));
-	  //strncpy(tempHandler,temp,strlen(temp));
 	  fwrite(outbuf, 1, amountRead, cacheFile);
 	  write(new_sd,temp,bytesRead);
     
