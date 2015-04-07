@@ -1,3 +1,12 @@
+Name: Frank Rui
+Student#: 30837132
 
-Put any comments for the markers in this file. If you don't have any comments you can delete the file from your repo.
+Name: Zilun Peng
+Student#: 33780123
+
+Important: We are doing the late submission for Tuesday April 7th.
+
+Notes: 
+Our program will make a cache directory upon start, it may be necessary to delete that 
+cache directory when restarting the program.
 

@@ -477,6 +477,7 @@ void request_handler(void* args) {
 	    fwrite(outbuf, 1, amountRead, cacheFile);
 	    written = write(new_sd, outbuf, amountRead);
 	    if(written == -1) {
+	      printf("crashed\n");
 	      fclose(cacheFile);
 	      remove(dir);
 	      close(new_sd);
@@ -617,7 +618,15 @@ void request_handler(void* args) {
 	  memset(temp,0,sizeof(temp));
 	  bytesRead = readSocketLine(host_sd,temp);
 	  fwrite(outbuf, 1, amountRead, cacheFile);
-	  write(new_sd,temp,bytesRead);
+	  written = write(new_sd,temp,bytesRead);
+	  if(written == -1){
+	    fclose(cacheFile);
+	    remove(dir);
+	    close(new_sd);
+	    close(host_sd);
+	    isBreak = 1;
+	    break;
+	  }
     
 	  int len = strlen(temp);
 	  strptr = strtok_r(temp, ";",&save6);
@@ -638,6 +647,7 @@ void request_handler(void* args) {
 	printf("end of response: %s\n",outbuf);
 	fwrite(outbuf, 1, amountRead, cacheFile);
 	write(new_sd, outbuf, amountRead);
+	
       }
     }
     if(isBreak)
