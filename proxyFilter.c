@@ -174,6 +174,7 @@ void request_handler(void* args) {
   char name[255];
   char dir[255];
   char cacheLine[5000];
+  char URI[BUFLEN];
   char* save0;
   char* save1;
   char* save2;
@@ -202,6 +203,7 @@ void request_handler(void* args) {
     client = empty;
     host = empty;
     isBreak = 0;
+    rewind(fp);
 
     printf("Waiting to accept a connection\n");
     if ((new_sd = accept(server_sd, (struct sockaddr *)&client, &client_len)) == -1) {
@@ -286,28 +288,35 @@ void request_handler(void* args) {
     printf("path: %s\n", absolutePath);
 
     //check blacklist before making connection
+    memset(URI, 0, sizeof(URI));
+    strcat(URI, "http://");
+    strcat(URI, hostAddr);
+    strcat(URI, absolutePath);
+    strcat(URI, ":");
+    strcat(URI, portNum);
+    printf("URI is: %s\n", URI);
+    char* ret = 0;
     if (fp != NULL) {
       do {
-	if (fgets(line, 100, fp) != NULL) {
-	  strptr = strtok_r(line, ".",&save3);
-	  strptr = strtok_r(NULL, ".",&save3); //get host name of black list address
-	  strptr2 = strtok_r(hostAddr, ".",&save4);
-	  strptr2 = strtok_r(NULL, ".",&save4);
-	  if (*strptr == *strptr2) {
-	    strcpy(outbuf,"HTTP/1.1 403 Forbidden\r\n\r\n");
-	    printf("sent: %s\n", outbuf);
-	    isBreak = 1;
-	    break;
-	  }
-	  printf("black list: %s\n", line);
-	} else {
-	  break;
-	}
-      } while (1);
-      fclose(fp);
-      if(isBreak)
-	continue;
-    }
+       memset(line, 0, sizeof(line));
+	     if (fgets(line, 100, fp) != NULL) {
+          int len = strlen(line);
+          line[len - 1] = 0;
+          ret = strstr(URI, line);
+	        if (ret != NULL) {
+	           strcpy(outbuf,"HTTP/1.1 403 Forbidden\r\n\r\n");
+	           printf("sent: %s\n", outbuf);
+	           isBreak = 1;
+	           break;
+	        }	  
+	     } else {
+	       break;
+	     }
+    } while (1);
+
+  if(isBreak)
+	   continue;
+}
 
     //check cache
     cacheName = 0;
@@ -657,6 +666,7 @@ void request_handler(void* args) {
   } // end of while loop
   //sleep(5000);
   printf("exiting\n");
+  fclose(fp);
   close(host_sd);
   close(new_sd);
 }
