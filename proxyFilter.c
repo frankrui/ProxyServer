@@ -302,6 +302,9 @@ void request_handler(void* args) {
 	     if (fgets(line, 100, fp) != NULL) {
           int len = strlen(line);
           line[len - 1] = 0;
+          if (line[len - 2] == '\r') {
+            line[len - 2] = 0;
+          }
           ret = strstr(URI, line);
 	        if (ret != NULL) {
 	           strcpy(outbuf,"HTTP/1.1 403 Forbidden\r\n\r\n");
