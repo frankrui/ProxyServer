@@ -1,12 +1,6 @@
-Name: Frank Rui
-Student#: 30837132
+This is a simple proxy server with a cache. It can handle up to 4 requests in parallel.
 
-Name: Zilun Peng
-Student#: 33780123
-
-Important: We are doing the late submission for Tuesday April 7th.
-
-Notes: 
-Our program will make a cache directory upon start, it may be necessary to delete that 
-cache directory when restarting the program.
+Contributors:
+Frank Rui
+Zilun Peng
 
